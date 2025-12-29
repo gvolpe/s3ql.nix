@@ -164,9 +164,20 @@ in
         };
       };
       mountpoint = lib.mkOption {
-        description = "The mountpoint directory";
+        description = "The mountpoint directory --- if it contains a dash (-), mountUnitName needs to be set";
         default = "/mnt/s3ql";
         type = lib.types.path;
+      };
+      mountUnitName = lib.mkOption {
+        description = "The mount unit name";
+        # converts /mnt/s3ql to mnt-s3ql.mount
+        default =
+          let
+            stripped = lib.removePrefix "/" cfg.settings.mountpoint;
+            unit = builtins.replaceStrings [ "/" ] [ "-" ] stripped;
+          in
+          "${unit}.mount";
+        type = lib.types.str;
       };
       skipMkfs = lib.mkEnableOption "Whether to skip the mkfs.s3ql on first run or not (useful when restoring a machine)";
       threads = lib.mkOption {
@@ -190,7 +201,7 @@ in
 
     systemd.mounts = [
       {
-        name = "mnt-s3ql.mount";
+        name = cfg.settings.mountUnitName;
         requires = [ "s3ql-mount.service" ];
         after = [ "s3ql-mount.service" ];
         where = cfg.settings.mountpoint;
