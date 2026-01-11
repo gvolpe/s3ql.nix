@@ -70,7 +70,7 @@ let
           exit 0
         fi
       '' else ''
-        S3_PASSPHRASE=$(cat /run/agenix/s3-passphrase | tr -d '\n')
+        S3_PASSPHRASE=$(cat ${cfg.secrets.passphrase} | tr -d '\n')
 
         if [ ! -f ${cfg.settings.mkfs.flag} ]; then
           # We pipe the passphrase because for some reason mkfs.s3ql does not read it from the authfile...
