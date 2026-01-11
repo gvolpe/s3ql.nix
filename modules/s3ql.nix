@@ -6,7 +6,6 @@ let
   authfile = "/root/s3ql-auth";
   authService = "s3ql-auth.service";
   fsService = "s3ql-fs.service";
-  formatSuccessFlag = "/var/lib/s3ql-mkfs-done";
 
   mountWaitScript = pkgs.writeShellApplication {
     name = "run";
@@ -59,11 +58,12 @@ let
         exit 0
       fi
 
-      ${if cfg.settings.skipMkfs then ''
-        if [ ! -f ${formatSuccessFlag} ]; then
+      ${if cfg.settings.mkfs.skip then ''
+        if [ ! -f ${cfg.settings.mkfs.flag} ]; then
           fsck.s3ql \
             --authfile ${authfile} \
             --batch \
+            --cachedir ${cfg.settings.cache.directory} \
             --force-remote \
             --log syslog \
             ${cfg.settings.bucket.url}
@@ -72,21 +72,25 @@ let
       '' else ''
         S3_PASSPHRASE=$(cat /run/agenix/s3-passphrase | tr -d '\n')
 
-        if [ ! -f ${formatSuccessFlag} ]; then
+        if [ ! -f ${cfg.settings.mkfs.flag} ]; then
           # We pipe the passphrase because for some reason mkfs.s3ql does not read it from the authfile...
           echo "S3QL filesystem is uninitialized. Running mkfs.s3ql..."
-          echo -n "$S3_PASSPHRASE" | mkfs.s3ql ${cfg.settings.bucket.url} --authfile ${authfile}
+          echo -n "$S3_PASSPHRASE" | mkfs.s3ql \
+            --authfile ${authfile} \
+            --cachedir ${cfg.settings.cache.directory} \
+            ${cfg.settings.bucket.url}
           echo "S3QL formatting complete."
 
           # This ensures the service WILL NOT run on next boot.
-          echo "Creating success flag at ${formatSuccessFlag}"
-          mkdir -p "$(dirname "${formatSuccessFlag}")"
-          touch "${formatSuccessFlag}"
+          echo "Creating success flag at ${cfg.settings.mkfs.flag}"
+          mkdir -p "$(dirname "${cfg.settings.mkfs.flag}")"
+          touch "${cfg.settings.mkfs.flag}"
         else
           echo "filesystem already exists, running fsck.s3ql..."
           fsck.s3ql \
             --authfile ${authfile} \
             --batch \
+            --cachedir ${cfg.settings.cache.directory} \
             --force-remote \
             --log syslog \
             ${cfg.settings.bucket.url}
@@ -163,6 +167,14 @@ in
           type = lib.types.int;
         };
       };
+      mkfs = {
+        flag = lib.mkOption {
+          description = "The file created after mkfs.s3ql runs successfully, so that subsequent runs are avoided";
+          default = "/var/lib/s3ql-mkfs-done";
+          type = lib.types.path;
+        };
+        skip = lib.mkEnableOption "Whether to skip the mkfs.s3ql on first run or not (useful when restoring a machine)";
+      };
       mountpoint = lib.mkOption {
         description = "The mountpoint directory --- if it contains a dash (-), mountUnitName needs to be set";
         default = "/mnt/s3ql";
@@ -179,7 +191,6 @@ in
           "${unit}.mount";
         type = lib.types.str;
       };
-      skipMkfs = lib.mkEnableOption "Whether to skip the mkfs.s3ql on first run or not (useful when restoring a machine)";
       threads = lib.mkOption {
         description = "The number of parallel upload threads";
         default = 8;

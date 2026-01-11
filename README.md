@@ -46,7 +46,10 @@ Use the module options in your NixOS configuration, e.g.
         size = 30000000; # 30 GBs
       };
       mountpoint = "/mnt/s3ql";
-      skipMkfs = false;
+      mkfs = {
+        flag = "/var/lib/s3ql-mkfs-done";
+        skip = false;
+      };
     };
   };
 }
