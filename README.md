@@ -1,5 +1,7 @@
 # s3ql.nix
 
+[![build](https://github.com/gvolpe/s3ql.nix/actions/workflows/ci.yml/badge.svg)](https://github.com/gvolpe/s3ql.nix/actions/workflows/ci.yml)
+
 NixOS module for managing the [S3QL file system](https://github.com/s3ql/s3ql) via `systemd` services.
 
 ## Usage
