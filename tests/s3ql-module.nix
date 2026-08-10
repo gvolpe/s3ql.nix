@@ -53,6 +53,7 @@ let
   authStart = authService.serviceConfig.ExecStart;
   fsStart = fsService.serviceConfig.ExecStart;
   mountStart = mountService.serviceConfig.ExecStart;
+  mountStop = mountService.serviceConfig.ExecStop;
 
   mountUnit = lib.findFirst (mount: mount.name == "mnt-s3ql.mount") null mounts;
 
@@ -99,8 +100,8 @@ let
       (mountService.requires == [ "network-online.target" "s3ql-fs.service" ]))
     (assertCheck "runs mount service as root"
       (mountService.serviceConfig.User == "root" && mountService.serviceConfig.Group == "root"))
-    (assertCheck "uses s3ql umount for service shutdown"
-      (mountService.serviceConfig.ExecStop == "-${pkgs.s3ql}/bin/umount.s3ql ${mountpoint}"))
+    (assertCheck "uses a generated shutdown command"
+      (lib.hasSuffix "/bin/s3ql-stop" mountStop))
   ];
 in
 assert lib.all (check: check) checks;
@@ -157,6 +158,10 @@ pkgs.runCommand "s3ql-module-test" { } ''
   assert_contains "--max-threads 2" ${lib.escapeShellArg mountStart}
   assert_contains "--log syslog" ${lib.escapeShellArg mountStart}
   assert_not_contains "--threads" ${lib.escapeShellArg mountStart}
+
+  assert_contains "mountpoint -q ${mountpoint}" ${lib.escapeShellArg mountStop}
+  assert_contains "umount.s3ql ${mountpoint}" ${lib.escapeShellArg mountStop}
+  assert_contains "printf '%s\\n' \"\$output\" >&2" ${lib.escapeShellArg mountStop}
 
   mkdir -p "$out"
   touch "$out/passed"

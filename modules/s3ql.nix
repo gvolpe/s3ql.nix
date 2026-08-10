@@ -18,6 +18,27 @@ let
     '';
   };
 
+  mountStopScript = pkgs.writeShellApplication {
+    name = "s3ql-stop";
+    runtimeInputs = with pkgs; [ s3ql util-linux ];
+    text = ''
+      if ! mountpoint -q ${cfg.settings.mountpoint}; then
+        exit 0
+      fi
+
+      output=$(umount.s3ql ${cfg.settings.mountpoint} 2>&1) || {
+        status=$?
+
+        if mountpoint -q ${cfg.settings.mountpoint}; then
+          printf '%s\n' "$output" >&2
+          exit "$status"
+        fi
+
+        exit 0
+      }
+    '';
+  };
+
   execConditionScript = pkgs.writeShellApplication {
     name = "run";
     runtimeInputs = with pkgs;[ bash gnugrep ];
@@ -231,6 +252,9 @@ in
     systemd.services = {
       s3ql-auth = {
         description = "s3ql authfile setup";
+
+        unitConfig.DefaultDependencies = false;
+
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
@@ -259,6 +283,8 @@ in
           TimeoutStartSec = 0;
           Restart = "on-failure";
           RestartSec = 60;
+          # S3QL exits with 128 when fsck found and repaired errors
+          SuccessExitStatus = "0 128";
         };
       };
 
@@ -286,7 +312,7 @@ in
           ExecCondition = "${execConditionScript}/bin/run";
           ExecStart = "${mountScript}/bin/run";
           ExecStartPost = "${mountWaitScript}/bin/run";
-          ExecStop = "-${pkgs.s3ql}/bin/umount.s3ql ${cfg.settings.mountpoint}";
+          ExecStop = "${mountStopScript}/bin/s3ql-stop";
 
           MountFlags = "shared";
           User = "root";
