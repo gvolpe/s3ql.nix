@@ -34,6 +34,10 @@
 
       nixosModules.default = import ./modules/s3ql.nix;
 
+      overlays.default = final: prev: {
+        s3ql = self.packages.${prev.stdenv.hostPlatform.system}.default;
+      };
+
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs {
