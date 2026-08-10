@@ -13,6 +13,16 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
     {
+      checks = forAllSystems (system:
+        {
+          s3ql-module = import ./tests/s3ql-module.nix {
+            inherit (nixpkgs) lib;
+            module = self.nixosModules.default;
+            pkgs = import nixpkgs { inherit system; };
+          };
+        }
+      );
+
       devShells = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
