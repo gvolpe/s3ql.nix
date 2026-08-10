@@ -18,7 +18,25 @@
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "s3ql-source": "s3ql-source"
+      }
+    },
+    "s3ql-source": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784813262,
+        "narHash": "sha256-YPp/QN5oYyTzYLfb7KJGsvEF7wTt94XwuYCjCOF3cos=",
+        "owner": "s3ql",
+        "repo": "s3ql",
+        "rev": "0ffd787f76515d57efa03d3f65526c221852df90",
+        "type": "github"
+      },
+      "original": {
+        "owner": "s3ql",
+        "ref": "s3ql-6.3.0",
+        "repo": "s3ql",
+        "type": "github"
       }
     }
   },

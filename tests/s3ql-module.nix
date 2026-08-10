@@ -8,6 +8,8 @@ let
     modules = [
       module
       {
+        nixpkgs.pkgs = pkgs;
+
         services.s3ql = {
           enable = true;
 
@@ -29,8 +31,9 @@ let
             };
             mkfs = {
               flag = "/var/lib/s3ql/mkfs-done";
-              skip = true;
+              skip = false;
             };
+            connections = 3;
             threads = 2;
           };
         };
@@ -46,6 +49,10 @@ let
   authService = services.s3ql-auth;
   fsService = services.s3ql-fs;
   mountService = services.s3ql-mount;
+
+  authStart = authService.serviceConfig.ExecStart;
+  fsStart = fsService.serviceConfig.ExecStart;
+  mountStart = mountService.serviceConfig.ExecStart;
 
   mountUnit = lib.findFirst (mount: mount.name == "mnt-s3ql.mount") null mounts;
 
@@ -75,7 +82,7 @@ let
     (assertCheck "runs auth setup as root"
       (authService.serviceConfig.User == "root" && authService.serviceConfig.Group == "root"))
     (assertCheck "uses a generated auth setup command"
-      (lib.hasSuffix "/bin/run" authService.serviceConfig.ExecStart))
+      (lib.hasSuffix "/bin/run" authStart))
 
     (assertCheck "orders fs setup after auth and network"
       (fsService.requires == [ "network-online.target" "s3ql-auth.service" ]))
@@ -84,7 +91,7 @@ let
     (assertCheck "skips fs setup when the mountpoint is already active"
       (lib.hasSuffix "/bin/run" fsService.serviceConfig.ExecCondition))
     (assertCheck "uses a generated fs setup command"
-      (lib.hasSuffix "/bin/run" fsService.serviceConfig.ExecStart))
+      (lib.hasSuffix "/bin/run" fsStart))
 
     (assertCheck "starts the mount service for multi-user systems"
       (mountService.wantedBy == [ "multi-user.target" ]))
@@ -98,6 +105,59 @@ let
 in
 assert lib.all (check: check) checks;
 pkgs.runCommand "s3ql-module-test" { } ''
+  assert_contains() {
+    ${pkgs.gnugrep}/bin/grep -F -- "$1" "$2" > /dev/null || {
+      echo "s3ql module test failed: expected $2 to contain: $1"
+      exit 1
+    }
+  }
+
+  assert_not_contains() {
+    if ${pkgs.gnugrep}/bin/grep -F -- "$1" "$2" > /dev/null; then
+      echo "s3ql module test failed: expected $2 not to contain: $1"
+      exit 1
+    fi
+  }
+
+  assert_command_block_not_contains() {
+    block="$(${pkgs.gnugrep}/bin/grep -A 4 -F -- "$1" "$2")"
+    case "$block" in
+      *"$3"*)
+        echo "s3ql module test failed: expected $1 block in $2 not to contain: $3"
+        exit 1
+        ;;
+    esac
+  }
+
+  assert_contains "storage-url: ${bucketUrl}" ${lib.escapeShellArg authStart}
+  assert_contains "backend-login:" ${lib.escapeShellArg authStart}
+  assert_contains "backend-password:" ${lib.escapeShellArg authStart}
+  assert_contains "fs-passphrase:" ${lib.escapeShellArg authStart}
+
+  assert_contains "fsck.s3ql" ${lib.escapeShellArg fsStart}
+  assert_contains "--authfile /root/s3ql-auth" ${lib.escapeShellArg fsStart}
+  assert_contains "--batch" ${lib.escapeShellArg fsStart}
+  assert_contains "--cachedir /var/cache/s3ql" ${lib.escapeShellArg fsStart}
+  assert_contains "--force-remote" ${lib.escapeShellArg fsStart}
+  assert_contains "--log syslog" ${lib.escapeShellArg fsStart}
+  assert_not_contains "--compress" ${lib.escapeShellArg fsStart}
+
+  assert_contains "mkfs.s3ql" ${lib.escapeShellArg fsStart}
+  assert_contains "--authfile /root/s3ql-auth" ${lib.escapeShellArg fsStart}
+  assert_contains "--cachedir /var/cache/s3ql" ${lib.escapeShellArg fsStart}
+  assert_command_block_not_contains "mkfs.s3ql" ${lib.escapeShellArg fsStart} "--log"
+
+  assert_contains "mount.s3ql" ${lib.escapeShellArg mountStart}
+  assert_contains "--allow-other" ${lib.escapeShellArg mountStart}
+  assert_contains "--authfile /root/s3ql-auth" ${lib.escapeShellArg mountStart}
+  assert_contains "--cachedir /var/cache/s3ql" ${lib.escapeShellArg mountStart}
+  assert_contains "--cachesize 1024" ${lib.escapeShellArg mountStart}
+  assert_contains "--fg" ${lib.escapeShellArg mountStart}
+  assert_contains "--max-connections 3" ${lib.escapeShellArg mountStart}
+  assert_contains "--max-threads 2" ${lib.escapeShellArg mountStart}
+  assert_contains "--log syslog" ${lib.escapeShellArg mountStart}
+  assert_not_contains "--threads" ${lib.escapeShellArg mountStart}
+
   mkdir -p "$out"
   touch "$out/passed"
 ''

@@ -114,7 +114,8 @@ let
         --cachedir ${cfg.settings.cache.directory} \
         --cachesize ${toString cfg.settings.cache.size} \
         --fg \
-        --threads ${toString cfg.settings.threads} \
+        --max-connections ${toString cfg.settings.connections} \
+        --max-threads ${toString cfg.settings.threads} \
         --log syslog \
         ${cfg.settings.bucket.url} ${cfg.settings.mountpoint}
     '';
@@ -192,8 +193,13 @@ in
         type = lib.types.str;
       };
       threads = lib.mkOption {
-        description = "The number of parallel upload threads";
+        description = "The maximum number of concurrent compression/encryption threads";
         default = 8;
+        type = lib.types.int;
+      };
+      connections = lib.mkOption {
+        description = "The maximum number of concurrent backend I/O operations";
+        default = 32;
         type = lib.types.int;
       };
     };

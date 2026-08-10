@@ -26,13 +26,8 @@ jobs:
           name: gvolpe-nixos
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
-      - name: "Assert S3QL version ❄️"
-        run: |
-          version="$(nix develop -c s3qlstat --version)"
-          test "$version" = "S3QL 5.3.0" || {
-            echo "Expected S3QL 5.3.0, got: $version"
-            exit 1
-          }
+      - name: "Build s3ql package ❄️"
+        run: nix build --no-link --show-trace
 
       - name: "NixOS module test ❄️"
         run: nix build .#checks.x86_64-linux.s3ql-module --no-link --show-trace
