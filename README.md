@@ -52,7 +52,23 @@ Use the module options in your NixOS configuration, e.g.
         flag = "/var/lib/s3ql-mkfs-done";
         skip = false;
       };
+      fsck = {
+        enable = true;
+        schedule = "*-*-01..07 02:30:00";
+        skipIfUnitsActive = [
+          "borgbackup-job-media.service"
+          "s3-replica.service"
+        ];
+      };
     };
   };
 }
+```
+
+The monthly `s3ql-fsck.service` is opt-in. It writes a stamp under `settings.fsck.directory`, skips if any configured `skipIfUnitsActive` unit is still active or activating, stops `s3ql-mount.service`, verifies the mountpoint is unmounted, and then runs `fsck.s3ql` without `--force-remote`.
+
+This practice is [recommended upstream](https://github.com/s3ql/s3ql/blob/b285b820711fadc120e0205619ae5ab7b5e67a96/src/s3ql/mount.py#L601). Without it, you may see this warning in your logs when mounting your S3QL filesystem.
+
+```console
+Aug 11 06:42:34 metropolis run[626107]: WARNING: Last file system check was more than 1 month ago, running fsck.s3ql is recommended.
 ```

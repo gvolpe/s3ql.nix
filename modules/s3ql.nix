@@ -6,6 +6,8 @@ let
   authfile = "/root/s3ql-auth";
   authService = "s3ql-auth.service";
   fsService = "s3ql-fs.service";
+  fsckService = "s3ql-fsck.service";
+  mountService = "s3ql-mount.service";
 
   mountWaitScript = pkgs.writeShellApplication {
     name = "run";
@@ -123,6 +125,67 @@ let
     '';
   };
 
+  maintenanceFsckScript = pkgs.writeShellApplication {
+    name = "s3ql-fsck";
+    runtimeInputs = with pkgs; [ coreutils findutils s3ql systemd util-linux ];
+    text = ''
+      stamp_dir="${cfg.settings.fsck.directory}"
+      stamp="$stamp_dir/fsck-$(date +%Y-%m)"
+
+      unit_busy() {
+        local state
+        state=$(systemctl show --property=ActiveState --value "$1" 2>/dev/null || true)
+        [ "$state" = active ] || [ "$state" = activating ]
+      }
+
+      mkdir -p "$stamp_dir"
+
+      if [ -e "$stamp" ]; then
+        echo "S3QL fsck already completed for this calendar month."
+        exit 0
+      fi
+
+      set -- ${lib.escapeShellArgs cfg.settings.fsck.skipIfUnitsActive}
+
+      for unit in "$@"; do
+        if unit_busy "$unit"; then
+          echo "$unit is still active; skipping this S3QL fsck attempt."
+          exit 0
+        fi
+      done
+
+      if ! systemctl stop ${mountService}; then
+        echo "Could not stop ${mountService}; refusing to run fsck.s3ql." >&2
+        exit 1
+      fi
+
+      if mountpoint -q ${cfg.settings.mountpoint}; then
+        echo "${cfg.settings.mountpoint} is still mounted; refusing to run fsck.s3ql." >&2
+        exit 1
+      fi
+
+      fsck_status=0
+
+      fsck.s3ql \
+        --authfile ${authfile} \
+        --batch \
+        --cachedir ${cfg.settings.cache.directory} \
+        --max-connections ${toString cfg.settings.connections} \
+        --max-threads ${toString cfg.settings.threads} \
+        --log syslog \
+        ${cfg.settings.bucket.url} || fsck_status=$?
+
+      if [ "$fsck_status" -ne 0 ] && [ "$fsck_status" -ne 128 ]; then
+        exit "$fsck_status"
+      fi
+
+      touch "$stamp"
+      find "$stamp_dir" -maxdepth 1 -name 'fsck-????-??' -type f -mtime +370 -delete
+
+      exit "$fsck_status"
+    '';
+  };
+
   mountScript = pkgs.writeShellApplication {
     name = "run";
     runtimeInputs = with pkgs; [ s3ql ];
@@ -223,6 +286,24 @@ in
         default = 32;
         type = lib.types.int;
       };
+      fsck = {
+        enable = lib.mkEnableOption "Suggested monthly S3QL filesystem checks";
+        schedule = lib.mkOption {
+          description = "The systemd OnCalendar schedule for monthly fsck runs";
+          default = "*-*-01..07 02:30:00";
+          type = lib.types.str;
+        };
+        directory = lib.mkOption {
+          description = "Directory used to store monthly successful fsck stamps";
+          default = "/var/lib/s3ql";
+          type = lib.types.path;
+        };
+        skipIfUnitsActive = lib.mkOption {
+          description = "Systemd units that should defer a scheduled fsck while active or activating";
+          default = [ ];
+          type = with lib.types; listOf str;
+        };
+      };
     };
 
     external.sshkeys = lib.mkOption {
@@ -240,8 +321,8 @@ in
     systemd.mounts = [
       {
         name = cfg.settings.mountUnitName;
-        requires = [ "s3ql-mount.service" ];
-        after = [ "s3ql-mount.service" ];
+        requires = [ mountService ];
+        after = [ mountService ];
         where = cfg.settings.mountpoint;
         what = cfg.settings.bucket.url;
         type = "none"; # the mounting is done by the service
@@ -324,6 +405,33 @@ in
           # ensures systemd can track the FUSE process
           NotifyAccess = "all";
         };
+      };
+    } // lib.optionalAttrs cfg.settings.fsck.enable {
+      s3ql-fsck = {
+        description = "Monthly S3QL filesystem check";
+
+        requires = [ "network-online.target" authService ];
+        after = [ "network-online.target" authService ];
+
+        unitConfig.DefaultDependencies = false;
+
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${maintenanceFsckScript}/bin/s3ql-fsck";
+          TimeoutStartSec = 0;
+          User = "root";
+          Group = "root";
+        };
+      };
+    };
+
+    systemd.timers.s3ql-fsck = lib.mkIf cfg.settings.fsck.enable {
+      description = "Monthly S3QL filesystem check timer";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.settings.fsck.schedule;
+        Persistent = false;
+        Unit = fsckService;
       };
     };
   };

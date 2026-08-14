@@ -35,6 +35,15 @@ let
             };
             connections = 3;
             threads = 2;
+            fsck = {
+              enable = true;
+              schedule = "*-*-01..07 02:30:00";
+              directory = "/var/lib/s3ql";
+              skipIfUnitsActive = [
+                "backup-one.service"
+                "backup-two.service"
+              ];
+            };
           };
         };
         system.stateVersion = "25.05";
@@ -48,12 +57,16 @@ let
 
   authService = services.s3ql-auth;
   fsService = services.s3ql-fs;
+  fsckService = services.s3ql-fsck;
   mountService = services.s3ql-mount;
 
   authStart = authService.serviceConfig.ExecStart;
   fsStart = fsService.serviceConfig.ExecStart;
+  fsckStart = fsckService.serviceConfig.ExecStart;
   mountStart = mountService.serviceConfig.ExecStart;
   mountStop = mountService.serviceConfig.ExecStop;
+
+  fsckTimer = testConfig.systemd.timers.s3ql-fsck;
 
   mountUnit = lib.findFirst (mount: mount.name == "mnt-s3ql.mount") null mounts;
 
@@ -93,6 +106,21 @@ let
       (lib.hasSuffix "/bin/run" fsService.serviceConfig.ExecCondition))
     (assertCheck "uses a generated fs setup command"
       (lib.hasSuffix "/bin/run" fsStart))
+
+    (assertCheck "generates periodic fsck service when enabled"
+      (fsckService.description == "Monthly S3QL filesystem check"))
+    (assertCheck "orders periodic fsck after auth and network"
+      (fsckService.requires == [ "network-online.target" "s3ql-auth.service" ]))
+    (assertCheck "runs periodic fsck as a oneshot"
+      (fsckService.serviceConfig.Type == "oneshot"))
+    (assertCheck "runs periodic fsck as root"
+      (fsckService.serviceConfig.User == "root" && fsckService.serviceConfig.Group == "root"))
+    (assertCheck "uses a generated periodic fsck command"
+      (lib.hasSuffix "/bin/s3ql-fsck" fsckStart))
+    (assertCheck "enables periodic fsck timer"
+      (fsckTimer.timerConfig.Unit == "s3ql-fsck.service"))
+    (assertCheck "uses configured periodic fsck schedule"
+      (fsckTimer.timerConfig.OnCalendar == "*-*-01..07 02:30:00"))
 
     (assertCheck "starts the mount service for multi-user systems"
       (mountService.wantedBy == [ "multi-user.target" ]))
@@ -147,6 +175,24 @@ pkgs.runCommand "s3ql-module-test" { } ''
   assert_contains "--authfile /root/s3ql-auth" ${lib.escapeShellArg fsStart}
   assert_contains "--cachedir /var/cache/s3ql" ${lib.escapeShellArg fsStart}
   assert_command_block_not_contains "mkfs.s3ql" ${lib.escapeShellArg fsStart} "--log"
+
+  assert_contains 'stamp_dir="/var/lib/s3ql"' ${lib.escapeShellArg fsckStart}
+  assert_contains 'stamp="$stamp_dir/fsck-$(date +%Y-%m)"' ${lib.escapeShellArg fsckStart}
+  assert_contains "backup-one.service" ${lib.escapeShellArg fsckStart}
+  assert_contains "backup-two.service" ${lib.escapeShellArg fsckStart}
+  assert_contains "systemctl stop s3ql-mount.service" ${lib.escapeShellArg fsckStart}
+  assert_contains "mountpoint -q ${mountpoint}" ${lib.escapeShellArg fsckStart}
+  assert_contains "fsck_status=0" ${lib.escapeShellArg fsckStart}
+  assert_contains "fsck.s3ql" ${lib.escapeShellArg fsckStart}
+  assert_contains "--authfile /root/s3ql-auth" ${lib.escapeShellArg fsckStart}
+  assert_contains "--batch" ${lib.escapeShellArg fsckStart}
+  assert_contains "--cachedir /var/cache/s3ql" ${lib.escapeShellArg fsckStart}
+  assert_contains "--max-connections 3" ${lib.escapeShellArg fsckStart}
+  assert_contains "--max-threads 2" ${lib.escapeShellArg fsckStart}
+  assert_contains "--log syslog" ${lib.escapeShellArg fsckStart}
+  assert_not_contains "--force-remote" ${lib.escapeShellArg fsckStart}
+  assert_contains '[ "$fsck_status" -ne 0 ] && [ "$fsck_status" -ne 128 ]' ${lib.escapeShellArg fsckStart}
+  assert_contains 'exit "$fsck_status"' ${lib.escapeShellArg fsckStart}
 
   assert_contains "mount.s3ql" ${lib.escapeShellArg mountStart}
   assert_contains "--allow-other" ${lib.escapeShellArg mountStart}
