@@ -8,6 +8,7 @@ let
   fsService = "s3ql-fs.service";
   fsckService = "s3ql-fsck.service";
   mountService = "s3ql-mount.service";
+  backendOptions = lib.concatStringsSep "," cfg.settings.backendOptions;
 
   mountWaitScript = pkgs.writeShellApplication {
     name = "run";
@@ -66,6 +67,9 @@ let
       echo "backend-login: $S3_ACCESS_KEY"
       echo "backend-password: $S3_SECRET_KEY"
       echo "fs-passphrase: $S3_PASSPHRASE"
+      ${lib.optionalString (cfg.settings.backendOptions != [ ]) ''
+        echo "backend-options: ${backendOptions}"
+      ''}
     } > "$AUTHFILE"
 
     # it needs to have read access only for the current user, otherwise any s3ql command fails
@@ -239,6 +243,12 @@ in
           example = "s3c://hel1.your-objectstorage.com/bucket-name/s3ql";
           type = lib.types.str;
         };
+      };
+      backendOptions = lib.mkOption {
+        description = "Backend-specific S3QL options written to authinfo2 as the backend-options entry";
+        default = [ ];
+        example = [ "sig-region=hel1" ];
+        type = with lib.types; listOf str;
       };
       cache = {
         directory = lib.mkOption {

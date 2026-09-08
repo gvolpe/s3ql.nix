@@ -2,7 +2,7 @@
 
 let
   mountpoint = "/mnt/s3ql";
-  bucketUrl = "s3c://example.invalid/s3ql-test";
+  bucketUrl = "s3c4://example.invalid/s3ql-test";
 
   testConfig = (lib.nixosSystem {
     modules = [
@@ -25,6 +25,7 @@ let
               name = "ci";
               url = bucketUrl;
             };
+            backendOptions = [ "sig-region=example" ];
             cache = {
               directory = "/var/cache/s3ql";
               size = 1024;
@@ -86,6 +87,8 @@ let
       (mountUnit != null && mountUnit.where == mountpoint))
     (assertCheck "uses the S3 bucket URL as the synthetic mount source"
       (mountUnit != null && mountUnit.what == bucketUrl))
+    (assertCheck "stores backend options"
+      (testConfig.services.s3ql.settings.backendOptions == [ "sig-region=example" ]))
     (assertCheck "orders the synthetic mount after s3ql-mount"
       (mountUnit != null && mountUnit.requires == [ "s3ql-mount.service" ]))
 
@@ -162,6 +165,7 @@ pkgs.runCommand "s3ql-module-test" { } ''
   assert_contains "backend-login:" ${lib.escapeShellArg authStart}
   assert_contains "backend-password:" ${lib.escapeShellArg authStart}
   assert_contains "fs-passphrase:" ${lib.escapeShellArg authStart}
+  assert_contains "backend-options: sig-region=example" ${lib.escapeShellArg authStart}
 
   assert_contains "fsck.s3ql" ${lib.escapeShellArg fsStart}
   assert_contains "--authfile /root/s3ql-auth" ${lib.escapeShellArg fsStart}

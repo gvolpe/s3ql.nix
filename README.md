@@ -40,9 +40,10 @@ Use the module options in your NixOS configuration, e.g.
 
     settings = {
       bucket = {
-        url = "s3c://nbg1.your-objectstorage.com/bucket-name/s3ql";
+        url = "s3c4://nbg1.your-objectstorage.com/bucket-name/s3ql";
         name = "nbg1";
       };
+      backendOptions = [ "sig-region=nbg1" ];
       cache = {
         directory = "/home/admin/.s3ql";
         size = 30000000; # 30 GBs
@@ -64,6 +65,8 @@ Use the module options in your NixOS configuration, e.g.
   };
 }
 ```
+
+Set `settings.backendOptions` for S3QL backend-specific authinfo2 options. For S3-compatible V4 backends, this is where values such as `sig-region=nbg1` belong.
 
 The monthly `s3ql-fsck.service` is opt-in. It writes a stamp under `settings.fsck.directory`, skips if any configured `skipIfUnitsActive` unit is still active or activating, stops `s3ql-mount.service`, verifies the mountpoint is unmounted, and then runs `fsck.s3ql` without `--force-remote`.
 
